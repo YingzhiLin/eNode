@@ -1,96 +1,95 @@
-var conf = require('../enode.config.js').config,
+const conf = require('../enode.config.js').config,
     log = require('tinylogger'),
     hexDump = require('hexy').hexy,
     bigint = require('../lib/biginteger.js'),
     crypt = require('./crypt.js'),
 
-    MAGICVALUE_SYNC    = 0x835E6FC4,
-    MAGICVALUE_SERVER  = 203,
-    MAGICVALUE_REQUESTER = 34
+    MAGICVALUE_SYNC = 0x835E6FC4,
+    MAGICVALUE_SERVER = 203,
+    MAGICVALUE_REQUESTER = 34;
 
-var TcpCrypt = function(packet) {
-  log.trace('TCP Crypt init')
-  this.packet = packet
-  this.status = conf.supportCrypt ? CS_UNKNOWN : CS_NONE
-}
+const TcpCrypt = function (packet) {
+    log.trace('TCP Crypt init')
+    this.packet = packet
+    this.status = conf.supportCrypt ? CS_UNKNOWN : CS_NONE
+};
 exports.TcpCrypt = TcpCrypt
 
-TcpCrypt.prototype.process = function(buffer) {
-  this.packet.data = buffer.get()
-  switch (this.status) {
-    case CS_NONE:
-      log.warn('crypt.process: Obfuscation disabled')
-      break
-    case CS_UNKNOWN:
-      log.trace('TcpCrypt.process: Negotiation start')
-      this.negotiate()
-      this.packet.status = PS_CRYPT_NEGOTIATING
-      this.status = CS_NEGOTIATING
-      break
-    case CS_NEGOTIATING:
-      log.trace('TcpCrypt.process: Negotiation response')
-      var that = this
-      this.handshake(buffer, function(err, data){
-        if (err != false) {
-          log.error(err)
-          that.packet.client.end()
-        }
-        else {
-          that.status = CS_ENCRYPTING
-          that.packet.status = PS_NEW
-          that.packet.init(data)
-        }
-      })
-      break
-    default:
-      log.error('TcpCrypt.process: I shouldn\'t be here!')
-      console.trace()
-  }
+TcpCrypt.prototype.process = function (buffer) {
+    this.packet.data = buffer.get()
+    switch (this.status) {
+        case CS_NONE:
+            log.warn('crypt.process: Obfuscation disabled')
+            break
+        case CS_UNKNOWN:
+            log.trace('TcpCrypt.process: Negotiation start')
+            this.negotiate()
+            this.packet.status = PS_CRYPT_NEGOTIATING
+            this.status = CS_NEGOTIATING
+            break
+        case CS_NEGOTIATING:
+            log.trace('TcpCrypt.process: Negotiation response')
+            var that = this
+            this.handshake(buffer, function (err, data) {
+                if (err != false) {
+                    log.error(err)
+                    that.packet.client.end()
+                } else {
+                    that.status = CS_ENCRYPTING
+                    that.packet.status = PS_NEW
+                    that.packet.init(data)
+                }
+            })
+            break
+        default:
+            log.error('TcpCrypt.process: I shouldn\'t be here!')
+            console.trace()
+    }
 }
 
-TcpCrypt.prototype.negotiate = function() {
-  var g = bignum(2),
-      p = bignum.fromBuffer(CRYPT_PRIME),
-      A = bignum.fromBuffer(this.packet.data.get(CRYPT_PRIME_SIZE)),
-      b = bignum.fromBuffer(crypt.randBuf(CRYPT_DHA_SIZE)),
-      B = bignum.powm(g, b, p).toBuffer(),
-      K = bignum.powm(A, b, p).toBuffer(),
+TcpCrypt.prototype.negotiate = function () {
+    var g = bignum(2),
+        p = bignum.fromBuffer(CRYPT_PRIME),
+        A = bignum.fromBuffer(this.packet.data.get(CRYPT_PRIME_SIZE)),
+        b = bignum.fromBuffer(crypt.randBuf(CRYPT_DHA_SIZE)),
+        B = bignum.powm(g, b, p).toBuffer(),
+        K = bignum.powm(A, b, p).toBuffer(),
 
-      padSize = this.packet.data.getUInt8(),
-      pad = this.packet.data.get(padSize),
-  // log.debug('Excess (should be 0): '+
-  // (this.packet.data.length-this.packet.data.pos()))
-      buf = new Buffer(CRYPT_PRIME_SIZE+1)
+        padSize = this.packet.data.getUInt8(),
+        pad = this.packet.data.get(padSize),
+        // log.debug('Excess (should be 0): '+
+        // (this.packet.data.length-this.packet.data.pos()))
+        buf = new Buffer(CRYPT_PRIME_SIZE + 1)
 
-  buf.putBuffer(K)
+    buf.putBuffer(K)
 
-  // create RC4 send key
-  buf.putUInt8(MAGICVALUE_SERVER)
-  this.sendKey = crypt.RC4CreateKey(crypt.md5(buf), true)
+    // create RC4 send key
+    buf.putUInt8(MAGICVALUE_SERVER)
+    this.sendKey = crypt.RC4CreateKey(crypt.md5(buf), true)
 
-  // create RC4 receive key
-  buf[CRYPT_PRIME_SIZE] = MAGICVALUE_REQUESTER
-  this.recvKey = crypt.RC4CreateKey(crypt.md5(buf), true)
+    // create RC4 receive key
+    buf[CRYPT_PRIME_SIZE] = MAGICVALUE_REQUESTER
+    this.recvKey = crypt.RC4CreateKey(crypt.md5(buf), true)
 
-  var padSize = crypt.rand(16)
-  var rc4Buf = new Buffer(4+1+1+1+padSize)
-  var packet = new Buffer(CRYPT_PRIME_SIZE+rc4Buf.length)
+    var padSize = crypt.rand(16)
+    var rc4Buf = new Buffer(4 + 1 + 1 + 1 + padSize)
+    var packet = new Buffer(CRYPT_PRIME_SIZE + rc4Buf.length)
 
-  rc4Buf.putUInt32LE(MAGICVALUE_SYNC)
-  rc4Buf.putUInt8(EM_SUPPORTED)
-  rc4Buf.putUInt8(EM_PREFERRED)
-  rc4Buf.putUInt8(padSize)
-  rc4Buf.putBuffer(crypt.randBuf(padSize))
+    rc4Buf.putUInt32LE(MAGICVALUE_SYNC)
+    rc4Buf.putUInt8(EM_SUPPORTED)
+    rc4Buf.putUInt8(EM_PREFERRED)
+    rc4Buf.putUInt8(padSize)
+    rc4Buf.putBuffer(crypt.randBuf(padSize))
 
-  packet.putBuffer(B)
-  packet.putBuffer(crypt.RC4Crypt(rc4Buf, rc4Buf.length, this.sendKey))
+    packet.putBuffer(B)
+    packet.putBuffer(crypt.RC4Crypt(rc4Buf, rc4Buf.length, this.sendKey))
 
-  this.packet.client.write(packet, function(err) {
-    if (err) log.error(
-      'TcpCrypt.negotiate Client write failed: '+
-      JSON.stringify(err)
-    )
-  })
+    this.packet.client.write(packet, function (err) {
+        if (err) log.error(
+            'TcpCrypt.negotiate Client write failed: ' +
+            JSON.stringify(err)
+        )
+    })
 }
 
 /**
@@ -101,24 +100,23 @@ TcpCrypt.prototype.negotiate = function() {
  * @param {Function} callback(err, data)
  * @returns {Boolean} True on correct handshake or False on error.
  */
-TcpCrypt.prototype.handshake = function(buffer, callback) {
-  if (this.status == CS_NEGOTIATING) {
-    var data = crypt.RC4Crypt(buffer, buffer.length, this.recvKey)
-    if (data.getUInt32LE() != MAGICVALUE_SYNC) {
-      callback({'message': 'Wrong MAGICVALUE_SYNC'})
-      return
+TcpCrypt.prototype.handshake = function (buffer, callback) {
+    if (this.status == CS_NEGOTIATING) {
+        var data = crypt.RC4Crypt(buffer, buffer.length, this.recvKey)
+        if (data.getUInt32LE() != MAGICVALUE_SYNC) {
+            callback({'message': 'Wrong MAGICVALUE_SYNC'})
+            return
+        }
+        if (data.getUInt8() != EM_OBFUSCATE) {
+            callback({'message': 'encryption method not supported'})
+            return
+        }
+        data.get(data.getUInt8()) // discard pad bytes
+        callback(false, data.get())
+        return
+    } else {
+        callback({'message': 'bad crypt status'})
     }
-    if (data.getUInt8() != EM_OBFUSCATE) {
-      callback({'message': 'encryption method not supported'})
-      return
-    }
-    data.get(data.getUInt8()) // discard pad bytes
-    callback(false, data.get())
-    return
-  }
-  else {
-    callback({'message': 'bad crypt status'})
-  }
 }
 
 /**
@@ -127,11 +125,10 @@ TcpCrypt.prototype.handshake = function(buffer, callback) {
  * @param {Buffer} buffer
  * @returns {Buffer} data
  */
-TcpCrypt.prototype.decrypt = function(buffer) {
-  if (this.status == CS_ENCRYPTING) {
-    return crypt.RC4Crypt(buffer, buffer.length, this.recvKey)
-  }
-  else {
-    return buffer
-  }
+TcpCrypt.prototype.decrypt = function (buffer) {
+    if (this.status == CS_ENCRYPTING) {
+        return crypt.RC4Crypt(buffer, buffer.length, this.recvKey)
+    } else {
+        return buffer
+    }
 }

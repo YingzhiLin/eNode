@@ -2,10 +2,10 @@
 
 require('./ed2k/globals.js');
 
-var ed2kTCPServer = require('./ed2k/tcpserver.js');
-var ed2kUDPServer = require('./ed2k/udpserver.js');
-var storage       = require('./storage/storage.js');
-var conf          = require('./enode.config.js').config;
+const ed2kTCPServer = require('./ed2k/tcpserver.js');
+const ed2kUDPServer = require('./ed2k/udpserver.js');
+const storage = require('./storage/storage.js');
+const conf = require('./enode.config.js').config;
 
 storage.init(function(){
 

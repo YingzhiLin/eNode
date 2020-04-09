@@ -1,0 +1,11 @@
+{
+  "name": "eNode",
+  "version": "1.0.0",
+  "dependencies": {
+    "mysql": "^2.18.1",
+    "tinylogger": "^0.1.31"
+  },
+  "devDependencies": {
+    "hexy": "^0.3.0"
+  }
+}

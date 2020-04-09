@@ -1,5 +1,6 @@
 docs/
 node_modules/
 tests/
+.idea/**/*
 *.log
 udpkeys-*.dat
